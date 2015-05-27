@@ -1,0 +1,246 @@
+<?php
+
+//The hook menus//
+  function lm_bulk_code_menu() {
+          $items = array();
+          $items["lm_bulk_code"] = array(
+              "title"  => " Bulk code manages",
+              "page callback" => "lm_bulk_code_all",
+              "access arguments" => array("lm approve-disapprove"),
+              "type" => MENU_NORMAL_ITEM
+          );
+          $items["lm_bulk_code/ajax"] = array(
+              "page callback" => "lm_bulk_code_ajax",
+              "access callback" => TRUE,
+              "type" => MENU_CALLBACK
+          );
+          $items["lm_bulk_code/labs/ajax"] = array(
+              "page callback" => "lm_bulk_code_lab_ajax",
+              "access callback" => TRUE,
+              "type" => MENU_CALLBACK
+          );          
+           return $items;
+  }  
+
+  function lm_bulk_code_perm() {
+        return array(
+            "lm approve-disapprove",
+        );
+  }
+
+function lm_bulk_code_all(){      
+  $lab_titles_q = db_query("SELECT * FROM {lab_migration_proposal}  ORDER BY lab_title ASC");
+  
+        $page_content .= "";
+        $page_content .= "<script src='http://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js'></script>";
+        $page_content .= "<div id = 'lm_bulk_code_manage'>";
+        $page_content .= "";
+        $page_content .= "<form id='lm_form_bulk_approve' method='post' class= 'form_comments'>";
+        //$page_content .= "<input type='hidden' name='postid' value=".$id.">";
+        $page_content .= "<label>";
+        $page_content .= "<span>Title of the Lab: </span><br><br>";
+        $page_content.= "<select id='select_lab'><option value='0'>Please Select a Lab</option>";
+        while ($lab_titles_data = db_fetch_object($lab_titles_q))
+  {
+    $page_content.= "<option value='".$lab_titles_data->id."'>".$lab_titles_data->lab_title . ' (Written by ' . $lab_titles_data->name . ')'."</option>";
+  } 
+        $page_content .= "</select>"; 
+        $page_content .= "<div id= 'download_entire_lab'></div>";
+        $page_content .= "<div id= 'download_entire_experiment'></div>";
+        $page_content .= "<div id= 'disapprove_textrea'>";
+        $page_content .= "<label>If Dis-Approved please specify reason for Dis-Appr…</label>";
+        $page_content .= "<textarea id='dis_approve' rows='5' cols='60'></textarea></div>";
+        $page_content .= "<input type='submit' value='Submit' class= 'submit_lm_form_bulk_approve' >";
+        $page_content .= "</form>";
+        $page_content .= "</div>";
+
+        return $page_content;
+  }
+
+      function lm_bulk_code_ajax() {      
+      $data = "";
+      //$value =$_POST['value'];
+      if(isset($_POST['id']) && isset($_POST['type'])){
+      $type =mysql_real_escape_string($_POST['type']);
+      $id =mysql_real_escape_string($_POST['id']);
+      }
+      //$chapter_id = 
+      if($type== "select_lab"){ 
+      $query= "SELECT * FROM {lab_migration_experiment} WHERE proposal_id = %d ORDER BY number ASC";
+      $book_chapters_q= db_query($query, $id);
+      $data .= "<br>";      
+      $data .= "<span><a href= 'lab_migration/full_download/lab/".$id."'>Download</a> (Download all the approved and unapproved examples of the entire book) </span><br>";
+      $data .= "<span><a href= 'textbook_companion/generate_book/".$id."/1'>Download PDF</a> (Download PDF of all the approved and unapproved examples of the entire book) </span><br>";
+      $data .= "<span><a href= 'textbook_companion/delete_book/".$id."'>Regenerate PDF</a> (Manually Regenerate PDF of the entire book) </span><br><br>";
+      $data .= "<input type='radio' class = 'form_action' name='approve_disaprave_book' value='1'>Approve Entire Book<br>";     
+      $data .= "<input type='radio'  class = 'form_action' name='approve_disaprave_book' value='4'>Delete Entire Book Including Proposal<br><br>";
+      echo $data;
+      exit();
+    }else {
+
+      $data .= "Please try again";
+       echo json_encode($data);
+      exit();
+    }
+    
+  }
+
+function lm_bulk_code_lab_ajax() {
+    global $user;
+         $data .= "";
+        if(isset($_POST['pref_id']) && isset($_POST['action'])){
+        $pref_id = mysql_real_escape_string($_POST['pref_id']);
+        $action = mysql_real_escape_string($_POST['action']);
+        $disapproval_reason = mysql_real_escape_string($_POST['dis_approve_reason']);
+        }
+        
+        if($action == 1)
+        {
+            $data .= "";
+            /* approving entire book */
+            $chapter_q = db_query("SELECT * FROM {lab_migration_experiment} WHERE preference_id = %d", $pref_id);
+            while ($experiment_data = db_fetch_object($experiment_q))
+              {
+                db_query("UPDATE {lab_migration_solution} SET approval_status = 1, approver_uid = %d WHERE experiment_id = %d AN approval_status = 0", $user->uid, $experiment_data->id);
+              }
+            drupal_set_message(t('Approved Entire Lab.'), 'status');
+            $email_subject = t('Your uploaded solutions have been approved');
+            $email_body = t('Your all the uploaded solutions for the Lab have been approved.');
+              if ($email_subject)
+                {
+                  $email_to = "contact@scilab.in" . ', ' . $user->mail;
+                  $param['standard']['subject'] = $email_subject;
+                  $param['standard']['body'] = $email_body;
+                  if (!drupal_mail('lab_migration', 'standard', $email_to, language_default(), $param, variable_get('lab_migration_from_email', NULL), TRUE))
+                    drupal_set_message('Error sending email message.', 'error');
+                }    
+                      $data .= "Approved Entire Lab";
+                      echo $data;
+                      exit();     
+                       
+        }elseif($action == 4){
+            $root_path = lab_migration_path();             
+            $data .= "";
+            /* check if dependency files are present */
+            $dep_q = db_query("SELECT * FROM {lab_migration_dependency_files} WHERE proposal_id = %d", $pref_id);
+            if ($dep_data = db_fetch_object($dep_q))
+              {
+                var_dump("OK1");          
+                  $data = "Cannot delete book since it has dependency files that can be used by others. First delete the dependency files before deleing the Book.";
+                  echo $data;
+                  exit();
+              }
+              
+             if(delete_experiment($pref_id))
+              {                                
+                             
+                                  $dir_path = $root_path . $pref_id;
+                                  //var_dump($dir_path);
+                                  $path = is_dir($dir_path);
+                                  //var_dump($path);
+                                  if (is_dir($dir_path))
+                                  {
+                                      $res = rmdir($dir_path);
+                                    // var_dump( $res);
+                                      if (!$res)
+                                      {
+                                          $data .= "Cannot delete Book directory : " . $dir_path . ". Please contact administrator.";       
+                                           echo $data; 
+                                           exit();                 
+                                      }
+                                  } else {
+                                      $data = "Book directory not present : " . $dir_path . ". Skip deleting book directory.";
+                                       echo $data;
+                                         $preference_q = db_query("SELECT * FROM {lab_migration_proposal} WHERE id = %d", $pref_id);
+                                  $preference_data = db_fetch_object($preference_q);
+                                  $proposal_id = $preference_data->proposal_id;
+                                  db_query("DELETE FROM {lab_migration_experiment} WHERE proposal_id = %d", $proposal_id);
+                                  db_query("DELETE FROM {lab_migration_proposal} WHERE id = %d", $proposal_id);
+                                  $data .= 'Deleted Book Proposal.';
+                                  /* email */
+                                  $email_subject = t('Your uploaded examples including the book proposal have been deleted');
+                                  $email_body = t('Your all the uploaded examples including the book have been deleted permanently.
+                                 
+
+                Reason for deletion:
+
+                ' . $disapproval_reason); 
+                          if ($email_subject)
+                            {
+                              $email_to = $user->mail;
+                               var_dump($data);
+                               die();
+                              $param['standard']['subject'] = $email_subject;
+                              $param['standard']['body'] = $email_body;
+                              if (!drupal_mail('lab_migration', 'standard', $email_to, language_default(), $param, variable_get('lab_migration_from_email', NULL), TRUE))
+                                  $data .='Error sending email message.';
+                                  echo $data;
+                                   exit();   
+                            }              
+                                  
+                              else {
+                                   $data .= "Error Dis-Approving and Deleting Entire Book."; 
+                                   echo $data;
+                                   exit();                 
+                              }
+                                   }
+                                  /* deleting preference and proposal */
+                                 $preference_q = db_query("SELECT * FROM {lab_migration_proposal} WHERE id = %d", $pref_id);
+                                  $preference_data = db_fetch_object($preference_q);
+                                  $proposal_id = $preference_data->proposal_id;
+                                  db_query("DELETE FROM {lab_migration_experiment} WHERE proposal_id = %d", $proposal_id);
+                                  db_query("DELETE FROM {lab_migration_proposal} WHERE id = %d", $proposal_id);
+                                  $data .= 'Deleted Book Proposal.';
+                                  /* email */
+                                  $email_subject = t('Your uploaded examples including the book proposal have been deleted');
+                                  $email_body = t('Your all the uploaded examples including the book have been deleted permanently.
+
+                Reason for deletion:
+
+                ' . $disapproval_reason); 
+                          if ($email_subject)
+                            {
+                              $email_to = $user->mail;
+                              $param['standard']['subject'] = $email_subject;
+                              $param['standard']['body'] = $email_body;
+                              if (!drupal_mail('lab_migration', 'standard', $email_to, language_default(), $param, variable_get('lab_migration_from_email', NULL), TRUE))
+                                  $data .='Error sending email message.';
+                                  echo $data;
+                                   exit();   
+                            }              
+                                  
+              } 
+
+              else {
+                   $data .= "Error Dis-Approving and Deleting Entire Book."; 
+                   echo $data;
+                   exit();                 
+              }
+                                 
+            }      
+}
+
+  function lm_bulk_code_init() {
+        drupal_add_js(drupal_get_path("module", "lm_bulk_code") . "/js/lm_bulk_code_ajax.js");        
+        drupal_add_js(drupal_get_path("module", "lm_bulk_code") . "/js/jquery-1.4.1.min.js");
+        drupal_add_js(drupal_get_path("module", "lm_bulk_code") . "/js/jquery-1.2.6.min.js");
+        
+        
+  }
+
+function delete_experiment($labid)
+{
+  $status = TRUE;
+  $root_path = lab_migration_path();  
+  $preference_q = db_query("DELETE FROM {lab_migration_experiment} WHERE proposal_id = %d",$labid);
+  if (!$preference_q)
+  {    
+    drupal_set_message('Invalid book.', 'error');
+    $status = FALSE;
+  } 
+  return $status;
+}
+
+?>
+
+
